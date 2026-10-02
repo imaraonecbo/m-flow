@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m-flow.local/schemas/opportunity.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["volume", "unitPrice", "leadTimeDays", "counterpartyId", "marginThreshold", "cogs", "financingCost", "platformFee", "requiredCapital", "durationDays", "counterpartyScore", "volatilityFactor"],
+  "properties": {
+    "volume": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "unitPrice": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "leadTimeDays": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "counterpartyId": {"type": "string", "minLength": 1},
+    "marginThreshold": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "cogs": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "financingCost": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "platformFee": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "requiredCapital": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "durationDays": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$"},
+    "counterpartyScore": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "volatilityFactor": {"type": "integer", "minimum": 0, "maximum": 10000}
+  }
+}

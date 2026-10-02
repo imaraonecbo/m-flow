@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+/data/*.tmp
+/data/ledger.jsonl
+/data/opportunities.json
+/data/counterparties.json
+/data/documents.json
+/data/executions.json
+/data/providers.json
+/data/mode.json
