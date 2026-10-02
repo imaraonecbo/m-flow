@@ -11,3 +11,6 @@ __pycache__/
 .coverage
 htmlcov/
 *.log
+data/*.json
+data/*.jsonl
+!data/.gitkeep
