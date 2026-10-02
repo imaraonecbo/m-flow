@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from engine.documents import TradeTerms, canonical_json, generate_trade_documents
 from engine.revenue import RevenueEngine, TreasuryAdapter
 from engine.verification import verify_ed25519_signature, verify_three_party_contract_signatures, validate_invoice_metadata
+from engine.registry import CounterpartyRegistry
+from engine.readiness import SystemReadinessAuditor
 
 
 CENT = Decimal("0.01")
@@ -252,14 +254,26 @@ class OpportunityRecord:
 class MFlowPipeline:
     def __init__(self, mode: Optional[str] = None) -> None:
         self.mode = (mode or os.getenv("M_FLOW_MODE", "DISCOVERY")).upper()
+        if self.mode not in {"DISCOVERY", "PAPER", "LIVE"}:
+            raise ValueError("INVALID_MODE")
+
         self.ledger = AppendOnlyHashLedger()
         self.records: dict[str, OpportunityRecord] = {}
         self.paper_rail = MockPaperRailAdapter()
+
+        self.registry = CounterpartyRegistry()
+        self.readiness = SystemReadinessAuditor(self.registry)
 
     def set_mode(self, mode: str) -> None:
         mode = mode.upper()
         if mode not in {"DISCOVERY", "PAPER", "LIVE"}:
             raise ValueError("INVALID_MODE")
+
+        # Every transition into PAPER or LIVE requires ALL ten
+        # real-world dependencies to be present and cryptographically valid.
+        if mode in {"PAPER", "LIVE"}:
+            self.readiness.assert_ready_for_mode(mode)
+
         self.mode = mode
         self.ledger.append("MODE_CHANGED", {"mode": mode, "actor": "operator"})
 
@@ -548,7 +562,30 @@ pipeline = MFlowPipeline()
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "M-FLOW", "mode": pipeline.mode, "auditVerified": pipeline.ledger.verify()}
+    readiness = pipeline.readiness.evaluate()
+
+    return {
+        "ok": True,
+        "service": "M-FLOW",
+        "mode": pipeline.mode,
+        "auditVerified": pipeline.ledger.verify(),
+        "readiness": {
+            "ready": readiness["ready"],
+            "passedCount": readiness["passedCount"],
+            "gateCount": readiness["gateCount"],
+        },
+    }
+
+
+@app.get("/api/v1/system/readiness")
+def system_readiness() -> dict[str, Any]:
+    # Deliberately exposes readiness metadata only; no credential values,
+    # access tokens, signatures or private material are returned.
+    return {
+        "service": "M-FLOW",
+        "mode": pipeline.mode,
+        **pipeline.readiness.evaluate(),
+    }
 
 
 @app.get("/v1/status")
@@ -560,6 +597,15 @@ def status() -> dict[str, Any]:
 def change_mode(payload: dict[str, str]) -> dict[str, str]:
     try:
         pipeline.set_mode(payload["mode"])
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "code": "SYSTEM_READINESS_FAILED",
+                "message": str(exc),
+                "readiness": pipeline.readiness.evaluate(),
+            },
+        ) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"mode": pipeline.mode}
