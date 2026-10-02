@@ -1,0 +1,8 @@
+[project]
+name = "m-flow-http"
+version = "0.2.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-q"
