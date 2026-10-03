@@ -10,7 +10,8 @@
     "test": "node --test --test-concurrency=1",
     "verify": "npm test",
     "audit": "node --env-file-if-exists=.env src/cli.js audit",
-    "mode": "node --env-file-if-exists=.env src/cli.js mode"
+    "mode": "node --env-file-if-exists=.env src/cli.js mode",
+    "discover": "node --env-file-if-exists=.env -e \"import('./src/acquisition/engine.js').then(async ({AcquisitionEngine})=>{const e=new AcquisitionEngine({ledger:{append:()=>{}},providerStore:{all:()=>[]}}); console.log(JSON.stringify(await e.discover({limit:Number(process.env.M_FLOW_DISCOVERY_LIMIT??'25')}),null,2));})\""
   },
   "engines": {
     "node": ">=22.0.0"

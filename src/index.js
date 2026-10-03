@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { URL } from 'node:url';
@@ -16,6 +16,7 @@ import { canonicalize } from './core/canonical.js';
 import { FixedDecimal } from './finance/decimal.js';
 import { MFlowError } from './core/errors.js';
 import { log } from './core/logging.js';
+import { AcquisitionEngine } from './acquisition/engine.js';
 
 const dataDir = path.resolve(process.env.M_FLOW_DATA_DIR ?? './data');
 fs.mkdirSync(dataDir, { recursive: true });
@@ -25,6 +26,7 @@ const counterparties = new JsonStore(path.join(dataDir, 'counterparties.json'));
 const documents = new JsonStore(path.join(dataDir, 'documents.json'));
 const executions = new JsonStore(path.join(dataDir, 'executions.json'));
 const providers = new JsonStore(path.resolve(process.env.M_FLOW_PROVIDER_CONFIG ?? path.join(dataDir, 'providers.json')));
+const acquisition = new AcquisitionEngine({ ledger, providerStore: providers });
 
 function gateStatus() {
   return { providerCredentials: providerCredentialsReady(), counterpartyEvidence: verifiedCounterpartyExists(), settlementAuthorization: settlementAuthorizationExists() };
@@ -81,6 +83,17 @@ async function route(req, res) {
   if (method === 'GET' && url.pathname === '/v1/mode') return send(res, 200, { mode: modeManager.get() });
   if (method === 'GET' && url.pathname === '/v1/status/gates') return send(res, 200, { mode: modeManager.get(), gates: gateStatus() });
   if (method === 'GET' && url.pathname === '/v1/providers') return send(res, 200, { providers: providers.all().map(({ id, name, rail, currencies, regions, minCapital, maxCapital, verified, active }) => ({ id, name, rail, currencies, regions, minCapital, maxCapital, verified, active })) });
+  if (method === 'GET' && url.pathname === '/v1/acquisition/status') return send(res, 200, { acquisition: acquisition.sourceStatus(), automationEnabled: process.env.M_FLOW_AUTODISCOVERY_ENABLED === 'true' });
+  if (method === 'GET' && url.pathname === '/v1/acquisition/opportunities') return send(res, 200, { opportunities: acquisition.opportunities.all() });
+  if (method === 'POST' && url.pathname === '/v1/acquisition/discover') { const b = await body(req); const result = await acquisition.discover(b); return send(res, 200, result); }
+  if (method === 'POST' && url.pathname === '/v1/acquisition/suppliers/discover') { const b = await body(req); const result = await acquisition.supplierCandidates(b); return send(res, 200, { candidates: result }); }
+  if (method === 'POST' && url.pathname === '/v1/acquisition/capital/match') { const b = await body(req); if (typeof b.amount !== 'string' || typeof b.currency !== 'string') throw new MFlowError('INVALID_CAPITAL_MATCH','amount and currency are required'); await acquisition.refreshCapitalFeed(); return send(res, 200, { matches: acquisition.capitalMatches(b) }); }
+  if (method === 'GET' && url.pathname === '/v1/acquisition/capital/feed') return send(res, 200, await acquisition.refreshCapitalFeed());
+  if (method === 'POST' && url.pathname === '/v1/acquisition/invoice/verify') { const b = await body(req); return send(res, 200, await acquisition.verifyInvoice(b)); }
+  if (method === 'POST' && url.pathname === '/v1/acquisition/kyb/company') { const b = await body(req); return send(res, 200, await acquisition.kyb.createCompany(b)); }
+  if (method === 'GET' && url.pathname.startsWith('/v1/acquisition/kyb/status/')) { const id = decodeURIComponent(url.pathname.slice('/v1/acquisition/kyb/status/'.length)); return send(res, 200, await acquisition.kyb.statusByExternalUserId(id)); }
+  if (method === 'POST' && url.pathname === '/v1/acquisition/outreach') { const b = await body(req); return send(res, 200, await acquisition.outreach.send(b)); }
+  if (method === 'POST' && url.pathname === '/v1/acquisition/signature-request') { const b = await body(req); return send(res, 201, await acquisition.signing.createSignatureRequest(b)); }
   if (method === 'POST' && url.pathname === '/v1/mode') {
     const b = await body(req); const result = modeManager.transition(b.mode, b.actor ?? 'operator'); return send(res, 200, result);
   }
@@ -218,4 +231,8 @@ const server = http.createServer((req, res) => route(req, res).catch((error) => 
   log('error', 'request.failed', { message: error.message });
   return send(res, 500, { error: 'INTERNAL_ERROR', message: 'Internal server error' });
 }));
-server.listen(port, host, () => log('info', 'mflow.started', { host, port, mode: modeManager.get(), node: process.version }));
+server.listen(port, host, () => {
+  acquisition.startScheduler();
+  log('info', 'mflow.started', { host, port, mode: modeManager.get(), node: process.version, acquisitionAutomation: process.env.M_FLOW_AUTODISCOVERY_ENABLED === 'true' });
+});
+

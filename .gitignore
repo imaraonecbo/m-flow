@@ -17,3 +17,6 @@ data/*.jsonl
 
 data/counterparty_registry.json
 data/readiness.json
+data/acquisition-opportunities.json
+data/acquisition-contacts.json
+data/acquisition-deals.json
